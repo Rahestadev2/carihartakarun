@@ -505,10 +505,11 @@ function roomInit(){
  if(!isHost)claimSlot(R).then(k=>{const q=SPS[k%SPS.length];me.x=q.x;me.z=q.z;me.r=faceC(q);const pr=db.ref(`${R}/players/${pid}`);pr.set({n:me.name,g:me.g,x:+q.x.toFixed(2),z:+q.z.toFixed(2),r:+me.r.toFixed(2),s:0,c:1});pr.onDisconnect().remove();slotOk=true});
  db.ref(`${R}/opened`).on('child_added',sn=>{const s=spots[+sn.key];if(s)openSpot(s,sn.val())});
  db.ref(`${R}/players`).on('value',sn=>{const v=sn.val()||{};
-  for(const k in remotes)if(!v[k]){scene.remove(remotes[k].mesh);delete remotes[k]}
-  for(const k in v){if(k===pid)continue;const d=v[k];let r=remotes[k];
+  for(const k in remotes)if(!v[k]&&state!=='end'){scene.remove(remotes[k].mesh);delete remotes[k]}
+  for(const k in v){if(k===pid)continue;const d=v[k];let r=remotes[k];if(r&&state==='end'&&r.fin&&!d.fin)continue;
    if(!r){r=remotes[k]={name:d.n,g:d.g,x:d.x??0,z:d.z??0,r:0,ph:0,moving:false,stars:0,comm:true,mesh:makeChar(d.g,d.n)};scene.add(r.mesh)}
-   r.tx=d.x??0;r.tz=d.z??0;r.tr=d.r||0;r.stars=d.s||0;r.comm=d.c!==0;r.dg=d.dg|0;r.actD=d.act||null}
+   r.tx=d.x??0;r.tz=d.z??0;r.tr=d.r||0;r.stars=d.s||0;r.fin=!!d.fin;r.comm=d.c!==0;r.dg=d.dg|0;r.actD=d.act||null}
+  if(state==='end')renderEnd();
   $('llist').innerHTML=Object.values(v).map(p=>`<li>${p.g==='P'?'👧':'👦'} ${p.n}</li>`).join('')||'<li>(belum ada peserta)</li>'});
  db.ref(`${R}/meta`).on('value',sn=>{const m=sn.val();if(!m)return;if(!isHost&&m.w!=null&&+m.w!==wIdx)setW(+m.w);if(m.annAt&&m.annAt!==lastAnn){const first=lastAnn===null;lastAnn=m.annAt;if(m.ann&&(!first||Date.now()+offset-m.annAt<30000))showAnn(m.ann,isHost)}else if(lastAnn===null)lastAnn=0;
   if(m.status==='playing'&&state==='lobby')startPlay(m.startAt)});
@@ -904,12 +905,30 @@ function botThink(b,dt){
 const everyone=()=>[me,...bots,...Object.values(remotes)].filter(Boolean);
 function end(){
  if(state==='end')return;state='end';stopJingle();stopMusic();if(me){me.dig=null;me.dish=null}$('digp').classList.add('hide');$('dishp').classList.add('hide');if(duel)closeDuel('');$('qbox').classList.add('hide');$('act').classList.add('hide');
+ endSig='';endReady=!(isHost&&db&&room);
+ if(db&&room){
+  if(me)db.ref(`rooms/${room}/players/${pid}`).update({s:me.stars,fin:1});
+  if(isHost)db.ref(`rooms/${room}/meta`).update({status:'ended'});
+ }
+ $('end').classList.remove('hide');
+ if(me)saveScore();
+ if(isHost&&db&&room){ // pengawas: tunggu skor final tiap pemain (masing-masing menulis skor akhirnya saat waktunya habis)
+  $('rank').innerHTML='<li>⏳ Menunggu hasil akhir pemain…</li>';$('myres').textContent='Hasil akhir pemain';
+  let done=false;const go=()=>{if(done)return;done=true;endReady=true;renderEnd()};
+  setTimeout(go,3000);
+  db.ref(`rooms/${room}/players`).once('value').then(sn=>{applyRemote(sn.val()||{});setTimeout(go,1500)}).catch(go);
+ }else renderEnd();
+}
+let endSig='',endReady=true;
+// sinkronkan skor pemain lain dari data Firebase (dipakai saat hasil akhir)
+function applyRemote(v){for(const k in v){if(k===pid)continue;const r=remotes[k];if(r){r.stars=v[k].s||0;r.fin=!!v[k].fin}}}
+function renderEnd(){
+ if(state!=='end'||!endReady)return;
  const rows=everyone().sort((a,b)=>b.stars-a.stars);
  $('rank').innerHTML=rows.map(p=>`<li class="${p===me?'me':''}">${esc(p.name)} — ⭐ ${fs(p.stars)}${p===me?' (kamu)':''}</li>`).join('');
  $('myres').textContent=me?`Kamu mendapat ${fs(me.stars)} bintang (${Math.round(me.stars*POIN_BINTANG)} poin)`:'Hasil akhir pemain';
- $('end').classList.remove('hide');showJuara(rows);
- if(me)saveScore();
- if(db&&room){if(me)db.ref(`rooms/${room}/players/${pid}/s`).set(me.stars);if(isHost)db.ref(`rooms/${room}/meta`).update({status:'ended'})}
+ const sig=rows.map(p=>p.name+':'+fs(p.stars)).join('|');
+ if(sig!==endSig){endSig=sig;showJuara(rows)}
 }
 
 // ---------- input ----------
