@@ -443,7 +443,10 @@ function makeChar(g,name){
  const sv=makeShovel();sv.position.set(-.67,-.8,.35);sv.visible=false;arms[1].add(sv);
  G.add(label(name));G.userData={legs,arms,ic,sv};return G;
 }
-const anim=(e,dt)=>{const P=e.pose,u0=e.mesh.userData;if(u0.sv)u0.sv.visible=!!(P&&P.sv);if(P){e.mesh.position.set(P.x,P.y,P.z);e.mesh.rotation.set(P.tx||0,P.r,0);u0.legs[0].rotation.x=P.lg[0];u0.legs[1].rotation.x=P.lg[1];u0.arms[0].rotation.x=P.ar[0];u0.arms[1].rotation.x=P.ar[1];return}
+const anim=(e,dt)=>{
+ if(e.fl){const F=fallPose(e);if(F){const m=e.mesh,u=m.userData;m.rotation.order='YXZ';m.position.set(e.x,F.y,e.z);m.rotation.set(F.tx,e.r,0);if(u.sv)u.sv.visible=false;u.legs[0].rotation.x=F.lg[0];u.legs[1].rotation.x=F.lg[1];u.arms[0].rotation.x=F.ar[0];u.arms[1].rotation.x=F.ar[1];return}}
+ if(e.mesh.rotation.order!=='XYZ')e.mesh.rotation.order='XYZ';
+ const P=e.pose,u0=e.mesh.userData;if(u0.sv)u0.sv.visible=!!(P&&P.sv);if(P){e.mesh.position.set(P.x,P.y,P.z);e.mesh.rotation.set(P.tx||0,P.r,0);u0.legs[0].rotation.x=P.lg[0];u0.legs[1].rotation.x=P.lg[1];u0.arms[0].rotation.x=P.ar[0];u0.arms[1].rotation.x=P.ar[1];return}
  e.mesh.rotation.x=0;e.mesh.position.set(e.x,e.y||0,e.z);e.mesh.rotation.y=e.r;const u=e.mesh.userData;e.ph+=e.moving?dt*(e.run?17:11):0;const a=e.moving?Math.sin(e.ph)*.8:0;u.legs[0].rotation.x=a;u.legs[1].rotation.x=-a;u.arms[0].rotation.x=-a;u.arms[1].rotation.x=a};
 
 // ---------- game ----------
@@ -487,7 +490,7 @@ function roomInit(){
  else $('wbtn').style.pointerEvents='none';
  state='lobby';$('lobby').classList.remove('hide');$('lcode').textContent=room;$('linfo').textContent=`📚 ${N} soal · ⏱️ ${DUR/60} menit`;$('lann').classList.toggle('hide',!isHost);$('lcopy').classList.toggle('hide',!isHost);$('lstart').classList.toggle('hide',!isHost);$('lwait').classList.toggle('hide',isHost);
  $('lstart').onclick=()=>db.ref(`${R}/meta`).update({status:'playing',startAt:Date.now()+offset});
- setInterval(()=>{if(me&&slotOk&&state!=='end')db.ref(`${R}/players/${pid}`).update({x:+me.x.toFixed(2),z:+me.z.toFixed(2),r:+me.r.toFixed(2),s:me.stars,c:me.comm?1:0,dg:me.dig?1:(me.dish&&me.dish.phase==='wash')?2:(me.milk&&me.milk.phase==='work')?3:0,act:me.act?{i:me.act.it.idx,t:me.act.t0,x:+me.act.sx.toFixed(2),z:+me.act.sz.toFixed(2)}:null})},120);
+ setInterval(()=>{if(me&&slotOk&&state!=='end')db.ref(`${R}/players/${pid}`).update({x:+me.x.toFixed(2),z:+me.z.toFixed(2),r:+me.r.toFixed(2),s:me.stars,c:me.comm?1:0,dg:me.fl?4:me.dig?1:(me.dish&&me.dish.phase==='wash')?2:(me.milk&&me.milk.phase==='work')?3:0,act:me.act?{i:me.act.it.idx,t:me.act.t0,x:+me.act.sx.toFixed(2),z:+me.act.sz.toFixed(2)}:null})},120);
 }
 // ---------- pengumuman pengawas (lewat rooms/KODE/meta: ann + annAt) ----------
 let lastAnn=null,annT;
@@ -844,8 +847,25 @@ function askDish(d){
  showQ(soal[Math.random()*soal.length|0],ok=>{if(me.dish!==d)return;
   me.stars+=ok?3:1;d.w.done=true;d.w.mode='done';d.phase='exit';d.t1=Date.now()+offset;d.ax=me.x;d.az=me.z;const e=LAKE.W(.95,-3.4);d.ex=e[0];d.ez=e[1];
   toast(ok?'🎉 Benar! Poin DIKALI 3 → +3 ⭐ berkat membantu Bu Ani!':'❌ Salah… tapi kamu tetap dapat +1 ⭐ karena sudah membantu',4000)},'🍽️ Soal kerja sama (benar ×3)')}
+// ---------- tabrakan antar pemain: keduanya jatuh ----------
+const FALLT=2.6;
+function fallPose(e){const t=(Date.now()-e.fl)/1000;if(t>=FALLT){e.fl=0;e.imm=Math.max(e.imm||0,Date.now()+2500);return null}
+ const p=t<.35?t/.35:t>FALLT-.7?(FALLT-t)/.7:1,q=p*p*(3-2*p),w=t<.9?Math.sin(t*22)*.35*q:0;
+ return{tx:1.5*q,y:.18*q,lg:[-.25*q,.25*q],ar:[-2.5*q+w,-2.5*q-w]}}
+function thud(){try{const C=window.AudioContext||window.webkitAudioContext,a=new C(),o=a.createOscillator(),g=a.createGain(),t=a.currentTime;o.type='sine';o.frequency.setValueAtTime(180,t);o.frequency.exponentialRampToValueAtTime(45,t+.25);g.gain.setValueAtTime(.45,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);o.connect(g);g.connect(a.destination);o.start(t);o.stop(t+.32);setTimeout(()=>a.close(),500)}catch(e){}}
+function fallMe(who){if(!me||me.fl)return;me.fl=Date.now();me.moving=false;me.imm=Date.now()+FALLT*1000+2500;thud();
+ const h=$('hurt');h.classList.remove('go');void h.offsetWidth;h.classList.add('go');try{buzz()}catch(e){}
+ toast(`💥 Kamu bertabrakan${who?' dengan '+who:''} dan terjatuh!`,2200)}
+function collideCheck(){
+ const ln=Date.now();
+ if(!me||state!=='play'||me.fl||me.act||duel||me.dig||me.dish||me.milk||(me.y||0)>=.6||ln<(me.imm||0))return;
+ for(const k in remotes){const r=remotes[k];if(r.fl||r.dg||r.actD||ln<(r.imm||0))continue;
+  if(Math.hypot(me.x-r.x,me.z-r.z)<1.1&&(me.moving||r.moving)){r.fl=ln;fallMe(r.name);return}}
+ for(const b of bots){if(b.fl||b.busy||ln<(b.imm||0))continue;
+  if(Math.hypot(me.x-b.x,me.z-b.z)<1.1&&(me.moving||b.moving)){b.fl=ln;b.moving=false;b.imm=ln+FALLT*1000+2500;fallMe(b.name);return}}
+}
 function botThink(b,dt){
- if(b.busy){b.moving=false;return}
+ if(b.fl||b.busy){b.moving=false;return}
  if(b.wait>0){b.moving=false;b.wait-=dt;if(b.wait<=0){if(b.target&&!b.target.open)openSpot(b.target,b.name);b.target=null}return}
  if(!b.target||b.target.open){const c=spots.filter(s=>!s.open&&!s.cave);if(!c.length)return;b.target=c[Math.random()*c.length|0];b.stuck=0}
  const dx=b.target.ix-b.x,dz=b.target.iz-b.z,d=Math.hypot(dx,dz);
@@ -886,7 +906,7 @@ const WD={gc:new THREE.Color(),gs:0,sky:new THREE.Color(),cc:new THREE.Color(),g
 function setW(i,now){wIdx=i;const c=WC[i],gc=new THREE.Color(c[8]);WD.sky.set(c[0]);WD.fn=c[1];WD.ff=c[2];WD.hi=c[3];WD.si=c[4];WD.cn=c[5];WD.cc.set(c[6]);WD.co=c[7];WD.gc.copy(gc);WD.gs=c[9];WD.g1.set(0x4f9f5a).lerp(gc,c[9]);WD.g2.set(0x7bd26b).lerp(gc,c[9]);$('wbtn').textContent=WN[i];if(now)snap=1}
 function setWeatherRoom(n){setW(n);if($('lweather'))$('lweather').value=n;if(db&&room)db.ref(`rooms/${room}/meta`).update({w:n}).catch(()=>toast('Cuaca gagal disinkronkan ke pemain (cek aturan Firebase)',4000))}
 $('wbtn').onclick=()=>{if(mode!=='ai'&&!isHost)return;const n=(wIdx+1)%6;if(mode==='ai')setW(n);else setWeatherRoom(n)};
-const jump=()=>{if(me&&me.act){if(me.act.it.k==='swing')dismount();return}if(me&&state==='play'&&!(me.y>0)){me.vy=9;me.y=.01}};
+const jump=()=>{if(me&&me.act){if(me.act.it.k==='swing')dismount();return}if(me&&state==='play'&&!me.fl&&!(me.y>0)){me.vy=9;me.y=.01}};
 $('jump').onpointerdown=e=>{e.preventDefault();jump()};
 addEventListener('keydown',e=>{if(/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))return;if(e.code==='Space'){e.preventDefault();jump()}});
 // ---------- lari: tahan Shift (PC) atau ketuk tombol 🏃 (HP, ketuk lagi untuk berhenti lari) ----------
@@ -1070,7 +1090,7 @@ function dismount(){
  if(!me||!me.act)return;const it=me.act.it,w=toW(it,it.lx,1.9);
  me.x=w[0];me.z=w[1];me.r=it.rot;me.act=null;me.pose=null;me.y=.9;me.vy=3;
 }
-function interact(){if(!me)return;if(me.act){if(me.act.it.k==='swing')dismount();return}if(talkFirst)return talkTo(nearT);if(farmFirst)return startDig(nearF);if(milkFirst)return startMilk(nearM);if(dishFirst)return startDish(nearD);if(nearP)startAct(nearP);else requestOpen(nearS)}
+function interact(){if(!me||me.fl)return;if(me.act){if(me.act.it.k==='swing')dismount();return}if(talkFirst)return talkTo(nearT);if(farmFirst)return startDig(nearF);if(milkFirst)return startMilk(nearM);if(dishFirst)return startDish(nearD);if(nearP)startAct(nearP);else requestOpen(nearS)}
 function swingVis(dt){
  for(const it of PLAYITEMS){if(it.k!=='swing')continue;let ph=null;
   if(me&&me.act&&me.act.it===it&&me.pose)ph=me.pose.phi;
@@ -1201,7 +1221,7 @@ function update(dt){
  }
  nearS=null;nearT=null;talkFirst=false;nearF=null;farmFirst=false;nearD=null;dishFirst=false;nearM=null;milkFirst=false;
  if(me){
-  if(state==='play'&&!me.act){
+  if(state==='play'&&!me.act&&!me.fl){
    me.run=!!(keys.shift||runT);let dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+jx,dz=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0)+jz;const l=Math.hypot(dx,dz);
    if(CAMS[camT].fp&&camMode==='follow'){me.r-=dx*2.6*dt;const f=Math.max(-1,Math.min(1,-dz));me.moving=Math.abs(f)>.12;if(me.moving)moveEnt(me,Math.sin(me.r)*f*SPD()*dt,Math.cos(me.r)*f*SPD()*dt)}
    else{me.moving=l>.12;if(me.moving){if(l>1){dx/=l;dz/=l}moveEnt(me,dx*SPD()*dt,dz*SPD()*dt);me.r=Math.atan2(dx,dz)}}
@@ -1230,9 +1250,12 @@ function update(dt){
  $('act').classList.toggle('dim',!(nearS||nearP||sw||talkFirst||farmFirst||dishFirst||milkFirst));$('act').textContent=me&&me.act?(sw?'⬇️ Turun (E)':'🛝 Meluncur…'):talkFirst?'💬 Ajak '+nearT.o.name+' (E)':farmFirst?'🤝 Bantu Pak Tani mencangkul (E)':milkFirst?'🐄 Tawarkan bantuan memerah susu (E)':dishFirst?'🍽️ Tawarkan bantuan cuci piring (E)':nearP?(nearP.k==='slide'?'🛝 Main perosotan (E)':'🪑 Main ayunan (E)'):nearS?'🖐 '+(nearS.cave?'Buka peti harta karun':LBL[nearS.t])+' (E)':'🖐 Buka (E)';
  if(state==='play'||state==='question')bots.forEach(b=>botThink(b,dt));
  bots.forEach(b=>{b.ct=(b.ct??(10+Math.random()*20))-dt;if(b.ct<=0){b.ct=12+Math.random()*25;b.comm=!b.comm}});
- talkUI();
+ collideCheck();talkUI();
  if(duel&&!duel.bot&&duel.id&&!remotes[duel.opp])closeDuel('Lawan keluar dari permainan',true);
  for(const k in remotes){const r=remotes[k];
+  if(r.dg===4&&r.dgp!==4){if(!r.fl)r.fl=Date.now();if(me&&state==='play'&&!me.fl&&!me.act&&!duel&&Date.now()>(me.imm||0)&&Math.hypot(me.x-r.x,me.z-r.z)<3)fallMe(r.name)}
+  r.dgp=r.dg;
+  if(r.dg===4){const dx=r.tx-r.x,dz=r.tz-r.z,f=Math.min(1,dt*10);r.x+=dx*f;r.z+=dz*f;r.r=r.tr;r.moving=false;r.pose=null;continue}
   if(r.dg){const dx=r.tx-r.x,dz=r.tz-r.z,f=Math.min(1,dt*10);r.x+=dx*f;r.z+=dz*f;r.r=r.tr;r.moving=false;r.pose=r.dg===3?milkPose(r,t):r.dg===2?dishPose(r,t,0):digPose(r,t);continue}
   if(r.actD&&PLAYITEMS[r.actD.i]){const P=actPose({it:PLAYITEMS[r.actD.i],t0:r.actD.t,sx:r.actD.x,sz:r.actD.z},now);if(!P.done){r.pose=P;r.x=P.x;r.z=P.z;r.r=P.r;r.moving=false;continue}}
   r.pose=null;const dx=r.tx-r.x,dz=r.tz-r.z,f=Math.min(1,dt*10);r.moving=Math.hypot(dx,dz)>.05;r.x+=dx*f;r.z+=dz*f;r.r=r.tr}
